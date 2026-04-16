@@ -1,3 +1,7 @@
+---
+This version includes Linux fixes for focus restoration and keyboard automation, so it no longer types broken key sequences or sends an unwanted `Ctrl+C` by default.
+---
+
 # OpenWhip
 
 ![Whip divider](assets/divider.png)
@@ -22,7 +26,7 @@ sudo apt install xdotool
 - Click tray icon: spawn whip.
 - Click: drop whip.
 - Whip him 😩💢
-- It sends an interrupt (Ctrl-C) and one of 5 encouraging messages!
+- It types and submits one of 5 encouraging messages. On Linux, `Ctrl+C` is disabled by default.
 
 ## Roadmap
 

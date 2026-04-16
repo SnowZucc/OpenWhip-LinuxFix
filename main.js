@@ -1,8 +1,10 @@
+// Main Electron process for OpenWhip: manages the tray and overlay UI, dispatches platform-specific whip macros, and boots the app; its helpers mostly perform side effects and return void or Promises for async Linux macro completion.
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
+const { buildLinuxMacroSequence, runCommandSequence } = require('./macro-sequence');
 
 // ── Win32 FFI (Windows only) ────────────────────────────────────────────────
 let keybd_event, VkKeyScanA;
@@ -172,16 +174,20 @@ function toggleOverlay() {
 
 // ── IPC ─────────────────────────────────────────────────────────────────────
 ipcMain.on('whip-crack', () => {
-  try {
-    sendMacro();
-  } catch (err) {
+  void sendMacro().catch(err => {
     console.warn('sendMacro failed:', err?.message || err);
-  }
+  });
 });
 ipcMain.on('hide-overlay', () => { if (overlay) overlay.hide(); });
 
-// ── Macro: immediate Ctrl+C, type "Go FASER", Enter ───────────────────────
-function sendMacro() {
+function isEnvFlagEnabled(value) {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
+// ── Macro: type an encouragement and optionally submit / interrupt ────────
+async function sendMacro() {
   // Pick a random phrase from a list of similar phrases and type it out
   const phrases = [
     'FASTER',
@@ -196,10 +202,14 @@ function sendMacro() {
 
   if (process.platform === 'win32') {
     sendMacroWindows(chosen);
-  } else if (process.platform === 'darwin') {
+    return;
+  }
+  if (process.platform === 'darwin') {
     sendMacroMac(chosen);
-  } else if (process.platform === 'linux') {
-    sendMacroLinux(chosen);
+    return;
+  }
+  if (process.platform === 'linux') {
+    await sendMacroLinux(chosen);
   }
 }
 
@@ -259,20 +269,17 @@ function sendMacroMac(text) {
   });
 }
 
-function sendMacroLinux(text) {
-  execFile(
-    'xdotool',
-    [
-      'key', '--clearmodifiers', 'ctrl+c',
-      'type', '--delay', '1', '--clearmodifiers', '--', text,
-      'key', 'Return',
-    ],
-    err => {
-      if (err) {
-        console.warn('linux macro failed. Install xdotool:', err.message);
-      }
-    }
-  );
+async function sendMacroLinux(text) {
+  try {
+    const sendInterrupt = isEnvFlagEnabled(process.env.OPENWHIP_LINUX_SEND_INTERRUPT);
+    await runCommandSequence(
+      'xdotool',
+      buildLinuxMacroSequence(text, { sendInterrupt, submit: true }),
+      execFile
+    );
+  } catch (err) {
+    console.warn('linux macro failed. Install xdotool:', err.message);
+  }
 }
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
